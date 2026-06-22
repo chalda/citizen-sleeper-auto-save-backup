@@ -44,11 +44,11 @@ SAVE_FILE_NAME = "save_1.dat"
 # OS-specific folder paths
 SAVE_PATHS = {
     "windows": Path("C:/Users") / os.getenv("USERNAME", "User") / "AppData/LocalLow/Jump Over the Age/Citizen Sleeper",
-    "windows_app_store": Path("C:/Users") / os.getenv("USERNAME", "User") / "AppData/Local/Packages/IrondogStudio.CitizenSleeper_xxx/LocalState",
-    "macos1": Path.home() / "Library/Application Support/Irondog Studio/Citizen Sleeper",
-    "macos2": Path.home() / "Library/Saved Application State/com.irondogstudio.CitizenSleeper.savedstate",
-    "linux": Path.home() / ".local/share/Irondog Studio/Citizen Sleeper",
-    "steamos": Path.home() / ".local/share/Irondog Studio/Citizen Sleeper",
+    "windows_app_store": Path("C:/Users") / os.getenv("USERNAME", "User") / "AppData/Local/Packages/SurpriseAttackPtyLtd.CitizenSleeper_8k24hnfn3vvj0/SystemAppData/wgs",
+    "macos1": Path.home() / "Library/Application Support/Jump Over the Age/Citizen Sleeper",
+    "macos2": Path.home() / "Library/Saved Application State/com.JumpOvertheAge.CitizenSleeper",
+    "linux": Path.home() / ".local/share/Jump Over the Age/Citizen Sleeper",
+    "steamos": Path.home() / ".local/share/steamapps/compatdata/1578650/pfx/",
 }
 
 # ============================================================================
@@ -69,7 +69,7 @@ def get_system_paths() -> list[Path]:
     elif system == "darwin":  # macOS
         return [SAVE_PATHS["macos1"], SAVE_PATHS["macos2"]]
     elif system == "linux":
-        return [SAVE_PATHS["linux"]]
+        return [SAVE_PATHS["linux"], [SAVE_PATHS["steamos"]]]
     elif system == "linux2":  # Some Linux versions
         return [SAVE_PATHS["linux"]]
     else:
@@ -108,7 +108,6 @@ def wait_for_save_folder(timeout: Optional[int] = None) -> Path:
         TimeoutError: If folder not found within timeout period.
     """
     start_time = time.time()
-    paths_to_check = get_system_paths()
     
     print("Waiting for save folder to appear...")
     print(f"Checking paths every {BACKUP_FREQUENCY_SECONDS} seconds...")
