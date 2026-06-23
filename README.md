@@ -3,8 +3,8 @@ Monitors a game save folder and creates timestamped backups when changes are det
 The game periodically overwrites the savegame files as you play that can be corrupted in case of a crash.  
 Seemingly a common issue, with some players losing playthroughs dozens of hours into the game.  
 If you click Continue and get an infinite loading screen, bad savefile is probably the reason.  
-The default paths for different OSes are defined but but your milage may vary.  
-Default save paths are defined but only tested on Windows, please report issues or alternative setups.  
+The default paths for different OSes are defined but your milage may vary.  
+Only tested on Windows, please report issues or alternative setups.  
 Dont save scum, let the dice fall where they do.  
 5/5 game  
 
