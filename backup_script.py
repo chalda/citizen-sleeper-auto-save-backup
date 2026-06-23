@@ -29,6 +29,7 @@ import os
 import sys
 import shutil
 import time
+import json
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
@@ -40,8 +41,8 @@ from typing import Optional
 # Backup frequency in seconds (default: 10 minutes)
 BACKUP_FREQUENCY_SECONDS = 10 * 60
 
-# Save file to monitor for changes
-SAVE_FILE_NAME = "save_1.dat"
+# Save files to monitor for changes
+SAVE_FILE_NAMES = ["save_1.dat", "save_2.dat", "save_3.dat"]
 
 # OS-specific folder paths
 SAVE_PATHS = {
@@ -129,22 +130,52 @@ def wait_for_save_folder(timeout: Optional[int] = None) -> Path:
         time.sleep(BACKUP_FREQUENCY_SECONDS)
 
 
-def get_save_file_mtime(save_folder: Path) -> Optional[float]:
+def get_save_file_mtime(save_folder: Path, save_file_name: str) -> Optional[float]:
     """
-    Get the last modified time of the save file.
+    Get the last modified time of a specific save file.
     
     Args:
         save_folder: Path to the save folder.
+        save_file_name: The filename to check (e.g. 'save_1.dat').
     
     Returns:
         Modification time as float (seconds since epoch), or None if file doesn't exist.
     """
-    save_file = save_folder / SAVE_FILE_NAME
-    
+    save_file = save_folder / save_file_name
+
     if save_file.exists():
         return os.path.getmtime(save_file)
-    
+
     return None
+
+
+def get_state_file_path() -> Path:
+    """Return path to the JSON file storing last mtimes."""
+    script_dir = Path(__file__).parent.resolve()
+    return script_dir / ".last_mtimes.json"
+
+
+def load_last_mtimes(state_file: Path) -> dict:
+    """Load persisted last modification times for each save file."""
+    if not state_file.exists():
+        return {}
+
+    try:
+        with open(state_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            # Ensure keys are strings and values are floats (or None)
+            return {str(k): (float(v) if v is not None else None) for k, v in data.items()}
+    except Exception:
+        return {}
+
+
+def save_last_mtimes(state_file: Path, mtimes: dict) -> None:
+    """Persist last modification times to disk."""
+    try:
+        with open(state_file, "w", encoding="utf-8") as f:
+            json.dump(mtimes, f)
+    except Exception as e:
+        print(f"✗ Failed to save state file: {e}")
 
 
 def create_backup(save_folder: Path, backup_folder: Path) -> Optional[Path]:
@@ -223,13 +254,31 @@ def main():
     save_folder = wait_for_save_folder()
     print()
     
-    # Track last modified time of save file
-    last_modified_time = None
-    
+    # Load persisted mtimes for each monitored save file
+    state_file = get_state_file_path()
+    last_mtimes = load_last_mtimes(state_file)
+
+    # If we don't have a saved state, create an initial backup and record current mtimes
+    if not state_file.exists():
+        print("No previous state detected — creating initial backup if any save files exist...")
+        any_exists = False
+        current_snapshot = {}
+        for fname in SAVE_FILE_NAMES:
+            m = get_save_file_mtime(save_folder, fname)
+            if m is not None:
+                any_exists = True
+            current_snapshot[fname] = m
+
+        if any_exists:
+            create_backup(save_folder, backup_folder)
+        # Persist whatever we found (including None for missing files)
+        save_last_mtimes(state_file, current_snapshot)
+        last_mtimes = current_snapshot
+
     print("Starting backup monitoring loop...")
     print("-" * 70)
     print()
-    
+
     # Main backup loop
     iteration = 0
     try:
@@ -237,29 +286,50 @@ def main():
             iteration += 1
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{current_time}] Check #{iteration}")
-            
-            # Get current modification time
-            current_mtime = get_save_file_mtime(save_folder)
-            
-            if current_mtime is None:
-                print("  ⚠ Save file not found")
-            elif last_modified_time is None:
-                # First time we've seen the file
-                # restarting the script will always create an initial backup
-                print(f"  ℹ Save file detected: {format_time(current_mtime)}")
+
+            changed = False
+            current_snapshot = {}
+
+            # Check each monitored save file
+            for fname in SAVE_FILE_NAMES:
+                current_mtime = get_save_file_mtime(save_folder, fname)
+                current_snapshot[fname] = current_mtime
+                stored = last_mtimes.get(fname)
+
+                if current_mtime is None and stored is None:
+                    print(f"  {fname}: not present (no previous record)")
+                    continue
+                if current_mtime is None and stored is not None:
+                    print(f"  {fname}: was present before, now missing (treating as change)")
+                    changed = True
+                    continue
+                if stored is None and current_mtime is not None:
+                    print(f"  {fname}: detected at {format_time(current_mtime)} (no previous record)")
+                    changed = True
+                    continue
+                # Both exist
+                if current_mtime is not None and current_mtime > stored:
+                    print(f"  {fname}: modified! Previous: {format_time(stored)}, Current: {format_time(current_mtime)}")
+                    changed = True
+                else:
+                    print(f"  {fname}: no change (last known {format_time(stored)})")
+
+            if changed:
+                print("  ⚡ Change detected in one or more save files — creating backup...")
                 create_backup(save_folder, backup_folder)
-                last_modified_time = current_mtime
-            elif current_mtime > last_modified_time:
-                # File has been modified
-                print(f"  ⚡ Save file modified!")
-                print(f"    Previous: {format_time(last_modified_time)}")
-                print(f"    Current:  {format_time(current_mtime)}")
-                create_backup(save_folder, backup_folder)
-                last_modified_time = current_mtime
+                # update persisted mtimes
+                last_mtimes = current_snapshot
+                save_last_mtimes(state_file, last_mtimes)
             else:
                 # No changes
-                print(f"  ✓ No changes since {format_time(last_modified_time)}")
-            
+                # Pick the most recent stored time for a user-friendly message, if any
+                known_times = [t for t in last_mtimes.values() if t is not None]
+                if known_times:
+                    latest = max(known_times)
+                    print(f"  ✓ No changes since {format_time(latest)}")
+                else:
+                    print("  ✓ No monitored save files present yet")
+
             # Wait before next check
             print(f"  Waiting {BACKUP_FREQUENCY_SECONDS} seconds until next check...")
             print()

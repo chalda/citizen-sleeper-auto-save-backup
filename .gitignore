@@ -1,5 +1,6 @@
-# ignore the backups folder
+# ignore the backups folder and time folder
 backups/
+.last_mtimes.json
 
 # the rest is standard python stuff, probably will never matter
 
